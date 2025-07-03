@@ -55,7 +55,7 @@ def main(model_cfg):
         num_warmup_updates=model_cfg.optim.num_warmup_updates,
         save_per_updates=model_cfg.ckpts.save_per_updates,
         keep_last_n_checkpoints=model_cfg.ckpts.keep_last_n_checkpoints,
-        checkpoint_path=str(files("f5_tts").joinpath(f"../../{model_cfg.ckpts.save_dir}")),
+        checkpoint_path=model_cfg.ckpts.ckpts.save_dir, # str(files("f5_tts").joinpath(f"../../{model_cfg.ckpts.save_dir}")),
         batch_size_per_gpu=model_cfg.datasets.batch_size_per_gpu,
         batch_size_type=model_cfg.datasets.batch_size_type,
         max_samples=model_cfg.datasets.max_samples,
@@ -88,7 +88,9 @@ def main(model_cfg):
 
 
 if __name__ == "__main__":
-    main()
+    train_model_name = "f5tts_zzal_v2"
+    train_path = Path("/home/ubuntu/Documents/F5-TTS-Custom/train", train_model_name)
+    main(train_path=train_path, config_name="f5tts_zzal_v2.yaml")
 
 # accelerate config
 # accelerate launch src/f5_tts/train/train_custom.py --config-name F5TTS_zzal_v1.yaml
