@@ -410,14 +410,12 @@ class TrainerCustom:
                 if global_update % self.last_per_updates == 0 and self.accelerator.sync_gradients:
                     self.save_checkpoint(global_update, last=True)
 
-                if global_update % self.save_per_updates == 0 and self.accelerator.sync_gradients:
-                    self.save_checkpoint(global_update)
-
                     if self.log_samples and self.accelerator.is_local_main_process:
                         ref_audio_len = mel_lengths[0]
                         infer_text = [
                             text_inputs[0] + ([" "] if isinstance(text_inputs[0], list) else " ") + text_inputs[0]
                         ]
+                        print(text_inputs[0])
                         with torch.inference_mode():
                             generated, _ = self.accelerator.unwrap_model(self.model).sample(
                                 cond=mel_spec[0][:ref_audio_len].unsqueeze(0),
@@ -437,13 +435,71 @@ class TrainerCustom:
                                 gen_audio = vocoder(gen_mel_spec).squeeze(0).cpu()
                                 ref_audio = vocoder(ref_mel_spec).squeeze(0).cpu()
 
-                        torchaudio.save(
-                            f"{log_samples_path}/update_{global_update}_gen.wav", gen_audio, target_sample_rate
+                        # torchaudio.save(
+                        #     f"{log_samples_path}/update_{global_update}_gen.wav", gen_audio, target_sample_rate
+                        # )
+                        # torchaudio.save(
+                        #     f"{log_samples_path}/update_{global_update}_ref.wav", ref_audio, target_sample_rate
+                        # )
+                        self.writer.add_audio(
+                            f"Sample/update_{global_update}_Generated", gen_audio, global_step=global_update, sample_rate=target_sample_rate
                         )
-                        torchaudio.save(
-                            f"{log_samples_path}/update_{global_update}_ref.wav", ref_audio, target_sample_rate
+                        self.writer.add_audio(
+                            f"Sample/update_{global_update}_Reference", ref_audio, global_step=global_update, sample_rate=target_sample_rate
                         )
+                        update_text = text_inputs[0] if isinstance(text_inputs[0], str) else " ".join(map(str, text_inputs[0]))
+                        self.writer.add_text(
+                            f"Sample/update_{global_update}_Text", update_text, global_step=global_update
+                        )
+
                         self.model.train()
+
+                if global_update % self.save_per_updates == 0 and self.accelerator.sync_gradients:
+                    self.save_checkpoint(global_update)
+
+                    # if self.log_samples and self.accelerator.is_local_main_process:
+                    #     ref_audio_len = mel_lengths[0]
+                    #     infer_text = [
+                    #         text_inputs[0] + ([" "] if isinstance(text_inputs[0], list) else " ") + text_inputs[0]
+                    #     ]
+                    #     print(infer_text)
+                    #     with torch.inference_mode():
+                    #         generated, _ = self.accelerator.unwrap_model(self.model).sample(
+                    #             cond=mel_spec[0][:ref_audio_len].unsqueeze(0),
+                    #             text=infer_text,
+                    #             duration=ref_audio_len * 2,
+                    #             steps=nfe_step,
+                    #             cfg_strength=cfg_strength,
+                    #             sway_sampling_coef=sway_sampling_coef,
+                    #         )
+                    #         generated = generated.to(torch.float32)
+                    #         gen_mel_spec = generated[:, ref_audio_len:, :].permute(0, 2, 1).to(self.accelerator.device)
+                    #         ref_mel_spec = batch["mel"][0].unsqueeze(0)
+                    #         if self.vocoder_name == "vocos":
+                    #             gen_audio = vocoder.decode(gen_mel_spec).cpu()
+                    #             ref_audio = vocoder.decode(ref_mel_spec).cpu()
+                    #         elif self.vocoder_name == "bigvgan":
+                    #             gen_audio = vocoder(gen_mel_spec).squeeze(0).cpu()
+                    #             ref_audio = vocoder(ref_mel_spec).squeeze(0).cpu()
+
+                        # torchaudio.save(
+                        #     f"{log_samples_path}/update_{global_update}_gen.wav", gen_audio, target_sample_rate
+                        # )
+                        # torchaudio.save(
+                        #     f"{log_samples_path}/update_{global_update}_ref.wav", ref_audio, target_sample_rate
+                        # )
+                        # self.writer.add_audio(
+                        #     f"Sample/update_{global_update}_Generated", gen_audio, global_step=global_update, sample_rate=target_sample_rate
+                        # )
+                        # self.writer.add_audio(
+                        #     f"Sample/update_{global_update}_Reference", ref_audio, global_step=global_update, sample_rate=target_sample_rate
+                        # )
+                        # update_text = text_inputs[0] if isinstance(text_inputs[0], str) else " ".join(map(str, text_inputs[0]))
+                        # self.writer.add_text(
+                        #     f"Sample/update_{global_update}_Text", update_text, global_step=global_update
+                        # )
+
+                        # self.model.train()
 
         self.save_checkpoint(global_update, last=True)
 

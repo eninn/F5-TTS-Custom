@@ -41,7 +41,7 @@ from f5_tts.infer.utils_infer import (
 )
 
 
-DEFAULT_TTS_MODEL = "F5-TTS_v1"
+DEFAULT_TTS_MODEL = "F5-TTS_BASE"
 tts_model_choice = DEFAULT_TTS_MODEL
 
 DEFAULT_TTS_MODEL_CFG = [
@@ -49,6 +49,13 @@ DEFAULT_TTS_MODEL_CFG = [
     "hf://SWivid/F5-TTS/F5TTS_v1_Base/vocab.txt",
     json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
 ]
+CUSTOM_TTS_MODEL = "F5-TTS-V1"
+CUSTOM_TTS_MODEL_CFG = [
+    "ckpts/F5TTS_zzal_v1.2_vocos_char_f5tts_zzal_v1/model_last.pt",
+    "data/f5tts_zzal_v1/vocab.txt",
+    json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
+]
+    
 
 
 # load models
@@ -59,7 +66,9 @@ vocoder = load_vocoder()
 def load_f5tts():
     ckpt_path = str(cached_path(DEFAULT_TTS_MODEL_CFG[0]))
     F5TTS_model_cfg = json.loads(DEFAULT_TTS_MODEL_CFG[2])
-    return load_model(DiT, F5TTS_model_cfg, ckpt_path)
+    # ckpt_path = str(cached_path(CUSTOM_TTS_MODEL_CFG[0]))
+    # F5TTS_model_cfg = json.loads(CUSTOM_TTS_MODEL_CFG[2])
+    return load_model(DiT, F5TTS_model_cfg, ckpt_path) #, vocab_file=CUSTOM_TTS_MODEL_CFG[1])
 
 
 def load_e2tts():
@@ -131,7 +140,7 @@ def infer(
         return gr.update(), gr.update(), ref_text
 
     ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=show_info)
-
+    print(model)
     if model == DEFAULT_TTS_MODEL:
         ema_model = F5TTS_ema_model
     elif model == "E2-TTS":
@@ -146,6 +155,7 @@ def infer(
         if pre_custom_path != model[1]:
             show_info("Loading Custom TTS model...")
             custom_ema_model = load_custom(model[1], vocab_path=model[2], model_cfg=model[3])
+            # custom_ema_model = load_custom(CUSTOM_TTS_MODEL_CFG[0], CUSTOM_TTS_MODEL_CFG[1], CUSTOM_TTS_MODEL_CFG[2])
             pre_custom_path = model[1]
         ema_model = custom_ema_model
 
