@@ -328,12 +328,31 @@ def load_from_phonemize_txt(meta_path:str, wav_dir:str) -> Dataset_:
             line = line.strip()
             if not line or "|" not in line:
                 continue
-            file_name, text, speaker, emotion, lang = line.split("|")
+            
+            try:
+                file_name, text, speaker, emotion, lang = line.split("|")
+            except ValueError:
+                print(f"[WARN] Skipping malformed line: {line}")
+                continue
+
             wav_path = wav_dir / file_name
             duration = torchaudio.info(str(wav_path)).num_frames / torchaudio.info(str(wav_path)).sample_rate
 
             if not wav_path.exists():
                 print(f"[WARN] Missing wav file: {wav_path}")
+                continue
+
+            try:
+                info = torchaudio.info(str(wav_path))
+                duration = info.num_frames / info.sample_rate
+                if duration <= 1:  # 너무 짧은 음성은 스킵
+                    continue
+            except Exception as e:
+                print(f"[ERROR] torchaudio.info failed on {wav_path}: {e}")
+                continue
+
+            if not text.strip():
+                print(f"[WARN] Empty text for {file_name}, skipping")
                 continue
 
             data.append({
@@ -345,6 +364,9 @@ def load_from_phonemize_txt(meta_path:str, wav_dir:str) -> Dataset_:
                 "duration": duration
             })
 
+    if len(data) == 0:
+        raise ValueError(f"[ERROR] No valid data parsed from {meta_path}")
+    
     return Dataset_.from_list(data)
 
 def load_multiple_phonemize_datasets(

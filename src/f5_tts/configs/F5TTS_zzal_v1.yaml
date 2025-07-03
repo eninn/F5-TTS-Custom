@@ -3,44 +3,48 @@ hydra:
     dir: ckpts/${model.name}_${model.mel_spec.mel_spec_type}_${model.tokenizer}_${datasets.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 datasets:
-  name: F5TTS_zzal_v1  # dataset name
+  name: f5tts_zzal_v1  # dataset name
   train_paths: 
+    # - /mnt/data/dataset/audio_text/libriTTS/train/wavs
     - /mnt/data/dataset/audio_text/aihub015/train/wavs
-    - /mnt/data/dataset/audio_text/aihub131/train/wavs
+    # - /mnt/data/dataset/audio_text/aihub131/train/wavs
     - /mnt/data/dataset/audio_text/aihub133/train/wavs
-    - /mnt/data/dataset/audio_text/aihub138/train/wavs
+    # - /mnt/data/dataset/audio_text/aihub138/train/wavs
   valid_paths:
+    - /mnt/data/dataset/audio_text/libriTTS/valid/wavs
     - /mnt/data/dataset/audio_text/aihub015/valid/wavs
     - /mnt/data/dataset/audio_text/aihub131/valid/wavs
     - /mnt/data/dataset/audio_text/aihub133/valid/wavs
     - /mnt/data/dataset/audio_text/aihub138/valid/wavs
   train_metadatas: 
-    - /mnt/data/dataset/audio_text/aihub015/phonemize_train.txt
-    - /mnt/data/dataset/audio_text/aihub131/phonemize_train.txt
-    - /mnt/data/dataset/audio_text/aihub133/phonemize_train.txt
-    - /mnt/data/dataset/audio_text/aihub138/phonemize_train.txt
+    # - /mnt/data/dataset/audio_text/libriTTS/metadata_train.txt
+    - /mnt/data/dataset/audio_text/aihub015/metadata_train.txt
+    # - /mnt/data/dataset/audio_text/aihub131/metadata_train.txt
+    - /mnt/data/dataset/audio_text/aihub133/metadata_train.txt
+    # - /mnt/data/dataset/audio_text/aihub138/metadata_train.txt
   valid_metadatas:
-    - /mnt/data/dataset/audio_text/aihub015/phonemize_valid.txt
-    - /mnt/data/dataset/audio_text/aihub131/phonemize_valid.txt
-    - /mnt/data/dataset/audio_text/aihub133/phonemize_valid.txt
-    - /mnt/data/dataset/audio_text/aihub138/phonemize_valid.txt
-  batch_size_per_gpu: 5000  # 8 GPUs, 8 * 38400 = 307200
+    - /mnt/data/dataset/audio_text/libriTTS/metadata_valid.txt
+    - /mnt/data/dataset/audio_text/aihub015/metadata_valid.txt
+    - /mnt/data/dataset/audio_text/aihub131/metadata_valid.txt
+    - /mnt/data/dataset/audio_text/aihub133/metadata_valid.txt
+    - /mnt/data/dataset/audio_text/aihub138/metadata_valid.txt
+  batch_size_per_gpu: 38400  # 8 GPUs, 8 * 38400 = 307200 / rtx4090 batch:free MiB = 6400:581, 7200:OOM, 8000:2473->OOM, 8400:391->75, 10000:2021->OOM, 12000:OOM
   batch_size_type: frame  # frame | sample
-  max_samples: 64  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
+  max_samples: 3  # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
   num_workers: 16
 
 optim:
-  epochs: 1000
+  epochs: 10
   learning_rate: 7.5e-5
-  num_warmup_updates: 20000  # warmup updates
+  num_warmup_updates: 50000  # warmup updates
   grad_accumulation_steps: 1  # note: updates = steps / grad_accumulation_steps
   max_grad_norm: 1.0  # gradient clipping
   bnb_optimizer: False  # use bnb 8bit AdamW optimizer or not
 
 model:
-  name: F5TTS_zzal_v1  # model name
-  tokenizer: phoneme  # tokenizer type "pinyin" do g2p for only chinese characters, need .txt vocab_file | "char" for char-wise tokenizer, need .txt vocab_file
-  tokenizer_path: data/${datasets.name}/vocab.txt  # if 'custom' tokenizer, define the path want to use (should be vocab.txt)
+  name: F5TTS_zzal_v1.2  # model name F5TTS_zzal_v1->batchsize가 작아서 수정.
+  tokenizer: char  # tokenizer type "pinyin" do g2p for only chinese characters, need .txt vocab_file | "char" for char-wise tokenizer, need .txt vocab_file
+  tokenizer_path: data/${datasets.name}/new_vocab.txt  # if 'custom' tokenizer, define the path want to use (should be vocab.txt)
   backbone: DiT
   arch:
     dim: 1024
@@ -67,7 +71,7 @@ model:
 ckpts:
   logger: tensorboard  # wandb | tensorboard | null
   log_samples: True  # infer random sample per save checkpoint. wip, normal to fail with extra long samples
-  save_per_updates: 50000  # save checkpoint per updates
+  save_per_updates: 100000  # save checkpoint per updates
   keep_last_n_checkpoints: -1  # -1 to keep all, 0 to not save intermediate, > 0 to keep last N checkpoints
-  last_per_updates: 5000  # save last checkpoint per updates
+  last_per_updates: 10000  # save last checkpoint per updates
   save_dir: ckpts/${model.name}_${model.mel_spec.mel_spec_type}_${model.tokenizer}_${datasets.name}
