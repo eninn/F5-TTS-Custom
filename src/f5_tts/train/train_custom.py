@@ -13,11 +13,20 @@ from f5_tts.model.utils import get_tokenizer
 from f5_tts.logger import loggerConfig
 from torch.utils.tensorboard import SummaryWriter
 
-project_root = str(files("f5_tts").joinpath("../.."))
+# project_root = str(files("f5_tts").joinpath("../.."))
+# project_root = "/home/ubuntu/Documents/F5-TTS-Custom"
+project_root = Path(__file__).resolve().parents[3]
 os.chdir(project_root)  # change working directory to root of project (local editable)
 print(f"[INFO] Changed working directory to {project_root}")
 
-@hydra.main(version_base="1.3", config_path=str(files("f5_tts").joinpath("configs")), config_name=None)
+# training path setting
+# train_model_name = "f5tts_zzal_v2"
+# train_config_path = str(files("train").joinpath(train_model_name)) # str(files("f5_tts").joinpath("configs"))
+
+config_path = Path("train/f5tts_zzal_v2/f5tts_zzal_v2.yaml")
+model_cfg = OmegaConf.load(config_path)
+
+# @hydra.main(version_base="1.3", config_path=f"train/{train_model_name}", config_name=f"{train_model_name}.yaml")
 def main(model_cfg):
     logger = loggerConfig(logger_name="f5tts_train", log_dir=model_cfg.ckpts.save_dir, log_type='file', is_print=True)
     model_cls = hydra.utils.get_class(f"f5_tts.model.{model_cfg.model.backbone}")
@@ -30,10 +39,7 @@ def main(model_cfg):
     logger.add_info('Train setting', f'model name: {exp_name}')
 
     # set text tokenizer
-    if tokenizer != "custom":
-        tokenizer_path = model_cfg.datasets.name
-    else:
-        tokenizer_path = model_cfg.model.tokenizer_path
+    tokenizer_path = model_cfg.model.tokenizer_path
     vocab_char_map, vocab_size = get_tokenizer(tokenizer_path, tokenizer)
 
     logger.add_info('Train setting', f'Tokenizer set.')
@@ -46,6 +52,9 @@ def main(model_cfg):
         vocab_char_map=vocab_char_map,
     )
     logger.add_info('Train setting', f'Model load.')
+    
+    if "hydra" in model_cfg:
+        model_cfg.pop("hydra")
 
     # init trainer
     trainer = TrainerCustom(
@@ -55,7 +64,7 @@ def main(model_cfg):
         num_warmup_updates=model_cfg.optim.num_warmup_updates,
         save_per_updates=model_cfg.ckpts.save_per_updates,
         keep_last_n_checkpoints=model_cfg.ckpts.keep_last_n_checkpoints,
-        checkpoint_path=model_cfg.ckpts.ckpts.save_dir, # str(files("f5_tts").joinpath(f"../../{model_cfg.ckpts.save_dir}")),
+        checkpoint_path=model_cfg.ckpts.save_dir, # str(files("f5_tts").joinpath(f"../../{model_cfg.ckpts.save_dir}")),
         batch_size_per_gpu=model_cfg.datasets.batch_size_per_gpu,
         batch_size_type=model_cfg.datasets.batch_size_type,
         max_samples=model_cfg.datasets.max_samples,
@@ -76,7 +85,7 @@ def main(model_cfg):
 
 
     train_dataset = load_multiple_phonemize_datasets(model_cfg.datasets.train_paths, model_cfg.datasets.train_metadatas,
-                                                     mel_spec_kwargs=model_cfg.model.mel_spec)
+                                                     mel_spec_kwargs=model_cfg.model.mel_spec, logger=logger, vocab_map=vocab_char_map)
     
     # valid_dataset = load_multiple_phonemize_datasets(model_cfg.datasets.valid_paths, model_cfg.datasets.valid_metadatas,
     #                                                  tokenizer, mel_spec_kwargs=model_cfg.model.mel_spec)
@@ -84,14 +93,18 @@ def main(model_cfg):
         train_dataset,
         num_workers=model_cfg.datasets.num_workers,
         resumable_with_seed=666,  # seed for shuffling dataset
+        logger=logger,
+        epoch_print_step=model_cfg.ckpts.last_per_updates,
     )
 
 
-if __name__ == "__main__":
-    train_model_name = "f5tts_zzal_v2"
-    train_path = Path("/home/ubuntu/Documents/F5-TTS-Custom/train", train_model_name)
-    main(train_path=train_path, config_name="f5tts_zzal_v2.yaml")
+if __name__ == "__main__":    
+    main(model_cfg)
 
 # accelerate config
+# export NCCL_CUMEM_HOST_ENABLE=0   # cuMemHost 비활성화
+# export NCCL_DEBUG=INFO            # (옵션) 추가 로그
+# accelerate launch ...             # 기존 커맨드
+# accelerate launch src/f5_tts/train/train_custom.py > train/f5tts_zzal_v2/run/log1.out 2>&1
 # accelerate launch src/f5_tts/train/train_custom.py --config-name F5TTS_zzal_v1.yaml
 # accelerate launch --mixed_precision=fp16 src/f5_tts/train/train_custom.py --config-name F5TTS_zzal_v1.yaml

@@ -39,6 +39,9 @@ conda activate f5-tts
 > ```bash
 > # Install pytorch with your CUDA version, e.g.
 > pip install torch==2.4.0+cu124 torchaudio==2.4.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
+> # rtx 5090
+> pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+> pip install nvidia-nccl-cu12==2.26.2.post1
 > ```
 
 </details>

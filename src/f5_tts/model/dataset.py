@@ -1,4 +1,4 @@
-import json, sys
+import json, sys, re, unicodedata
 from importlib.resources import files
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from typing import List, Union
 
 from f5_tts.model.modules import MelSpec
 from f5_tts.model.utils import default
+from f5_tts.logger import loggerConfig
 
 
 class HFDataset(Dataset):
@@ -135,7 +136,7 @@ class CustomDataset(Dataset):
             duration = row["duration"]
 
             # filter by given length
-            if 0.3 <= duration <= 30:
+            if 1 <= duration <= 30:
                 break  # valid
 
             index = (index + 1) % len(self.data)
@@ -189,28 +190,30 @@ class DynamicBatchSampler(Sampler[list[int]]):
     """
 
     def __init__(
-        self, sampler: Sampler[int], frames_threshold: int, max_samples=0, random_seed=None, drop_residual: bool = False
+        self, sampler: Sampler[int], frames_threshold: int, max_samples=0, random_seed=None, drop_residual: bool = False, logger: loggerConfig = None,
     ):
         self.sampler = sampler
         self.frames_threshold = frames_threshold
         self.max_samples = max_samples
         self.random_seed = random_seed
         self.epoch = 0
+        self.logger = logger
 
         indices, batches = [], []
         data_source = self.sampler.data_source
 
-        for idx in tqdm(
-            self.sampler, desc="Sorting with sampler... if slow, check whether dataset is provided with duration"
-        ):
+        if self.logger:
+            self.logger.add_info("DynamicBatchSampler", "Sorting with sampler... if slow, check whether dataset is provided with duration")
+        for idx in self.sampler:
             indices.append((idx, data_source.get_frame_len(idx)))
         indices.sort(key=lambda elem: elem[1])
 
         batch = []
         batch_frames = 0
-        for idx, frame_len in tqdm(
-            indices, desc=f"Creating dynamic batches with {frames_threshold} audio frames per gpu"
-        ):
+        
+        if self.logger:
+            self.logger.add_info("DynamicBatchSampler", f"Creating dynamic batches with {frames_threshold} audio frames per gpu")
+        for idx, frame_len in indices:
             if batch_frames + frame_len <= self.frames_threshold and (max_samples == 0 or len(batch) < max_samples):
                 batch.append(idx)
                 batch_frames += frame_len
@@ -318,43 +321,80 @@ def load_dataset(
 
     return train_dataset
 
-def load_from_phonemize_txt(meta_path:str, wav_dir:str) -> Dataset_:
+def load_from_phonemize_txt(meta_path:str, wav_dir:str, logger: loggerConfig = None, vocab_map: dict = None) -> Dataset_:
     data = []
     meta_path = Path(meta_path)
     wav_dir = Path(wav_dir)
+    WS_MAP = {              # ord(codepoint) → ' '
+        ord('\u00A0'): ' ',   # NBSP
+        ord('\u3000'): ' ',   # IDEOGRAPHIC SPACE
+        ord('\t')    : ' '    # Horizontal TAB
+    }
+    DELETE_CHARS = '()[]{}<>'
 
-    with meta_path.open("r", encoding="utf-8") as f:
-        for line in tqdm(f, desc=f'Parsing {meta_path.name}', unit='sample', dynamic_ncols=True, file=sys.stdout):
+    with open(meta_path, "r", encoding="utf-8", errors='ignore') as f:
+        if logger:
+            logger.add_info("load_from_phoenmize_txt", f'Parsing {meta_path.name}')
+        for line in f:
             line = line.strip()
             if not line or "|" not in line:
                 continue
             
             try:
                 file_name, text, speaker, emotion, lang = line.split("|")
+                text = text.translate({ord('\u00A0'): ' ', ord('\u3000'): ' ', ord('\t'): ' '})
+                text = ''.join(' ' if unicodedata.category(c) == 'Zs' else c for c in text)
+                text = re.sub(r' {2,}', ' ', text).strip()
+                # 양쪽에 모두 " 가 있으면 제거
+                if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+                    text = text[1:-1].strip()
+                    
+                text = text.translate(str.maketrans('', '', DELETE_CHARS))
+                text.strip()
             except ValueError:
                 print(f"[WARN] Skipping malformed line: {line}")
                 continue
 
             wav_path = wav_dir / file_name
-            duration = torchaudio.info(str(wav_path)).num_frames / torchaudio.info(str(wav_path)).sample_rate
-
             if not wav_path.exists():
-                print(f"[WARN] Missing wav file: {wav_path}")
+                # print(f"[WARN] Missing wav file: {wav_path}")
                 continue
+
+            
+            duration = torchaudio.info(str(wav_path)).num_frames / torchaudio.info(str(wav_path)).sample_rate
 
             try:
                 info = torchaudio.info(str(wav_path))
                 duration = info.num_frames / info.sample_rate
-                if duration <= 1:  # 너무 짧은 음성은 스킵
+                if duration <= 1 or duration > 30:  # 너무 짧은 음성은 스킵
+                    # print(f"[WARN] duration is to long: {wav_path}")
                     continue
+                # if len(text) > 256:
+                #     print(f"[WARN] text is to long: {wav_path}")
+                #     continue
             except Exception as e:
                 print(f"[ERROR] torchaudio.info failed on {wav_path}: {e}")
                 continue
-
+            
             if not text.strip():
                 print(f"[WARN] Empty text for {file_name}, skipping")
                 continue
+            
+            if vocab_map is not None:
+                # (idx, ch) 튜플 리스트로 수집 → 미등록만 필터링
+                unknown = [(i, ch) for i, ch in enumerate(text) if ch not in vocab_map]
 
+                if unknown:
+                    # 사람이 읽기 쉽게 "문자(위치)" 형태로 포맷
+                    repr_unknown = ", ".join([f"'{ch}'(pos {i})" for i, ch in unknown])
+                    # continue
+                    raise ValueError(
+                        f"[ERROR] 발견된 unknown token(s): [{repr_unknown}]\n"
+                        f"파일: {file_name}\n"
+                        f"문장: {text}\n"
+                        "vocab.txt 를 갱신하거나 데이터에서 해당 문자를 제거하세요."
+                    )
+                    
             data.append({
                 "audio_path": str(wav_path),
                 "text": text,
@@ -374,6 +414,8 @@ def load_multiple_phonemize_datasets(
     meta_paths: list[str],
     mel_spec_module: nn.Module | None = None,
     mel_spec_kwargs: dict = dict(),
+    logger: loggerConfig = None,
+    vocab_map: dict = None,
 ) -> CustomDataset:
     """
     dataset_type    - "CustomDataset" if you want to use tokenizer name and default data path to load for train_dataset
@@ -389,7 +431,7 @@ def load_multiple_phonemize_datasets(
         print(f"[Loading] from: {meta_file}")
 
         # 1. load raw metadata
-        hf_dataset = load_from_phonemize_txt(str(meta_file), str(wav_dir))
+        hf_dataset = load_from_phonemize_txt(str(meta_file), str(wav_dir), logger, vocab_map)
 
         # durations = [None] * len(hf_dataset)
         # durations = [row["duration"] for row in hf_dataset]

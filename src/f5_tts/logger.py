@@ -1,4 +1,4 @@
-import logging, os, time, datetime, pytz
+import logging, os, time, datetime, pytz, requests
 from functools import wraps
 
 def seoul_time(timestamp):
@@ -75,3 +75,20 @@ def timeit(func):
         print(f"{func.__name__} took: {end - start:.6f} seconds")
         return result
     return wrapper
+
+
+
+def send_telegram_message(bot_token, chat_id, message):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message
+    }
+    try:
+        response = requests.post(url, data=payload)
+        if response.status_code == 200:
+            print("메시지 전송 성공!")
+        else:
+            print(f"에러 발생: {response.status_code}, {response.text}")
+    except Exception as e:
+        print(f"요청 중 에러 발생: {e}")

@@ -99,7 +99,7 @@ def list_str_to_idx(
 # Get tokenizer
 
 
-def get_tokenizer(dataset_name, tokenizer: str = "pinyin"):
+def get_tokenizer(tokenizer_path, tokenizer: str = "pinyin"):
     """
     tokenizer   - "pinyin" do g2p for only chinese characters, need .txt vocab_file
                 - "char" for char-wise tokenizer, need .txt vocab_file
@@ -109,21 +109,41 @@ def get_tokenizer(dataset_name, tokenizer: str = "pinyin"):
                 - if use "char", derived from unfiltered character & symbol counts of custom dataset
                 - if use "byte", set to 256 (unicode byte range)
     """
-    if tokenizer in ["pinyin", "char", "phoneme"]:
-        tokenizer_path = os.path.join(files("f5_tts").joinpath("../../data"), f"{dataset_name}/vocab.txt")
+    if tokenizer in ["pinyin", "char"]:
         with open(tokenizer_path, "r", encoding="utf-8") as f:
             vocab_char_map = {}
             for i, char in enumerate(f):
                 vocab_char_map[char[:-1]] = i
         vocab_size = len(vocab_char_map)
-        assert vocab_char_map.get(" ", -1) == 0, "make sure space is of idx 0 in vocab.txt, cuz 0 is used for unknown char"
+        assert vocab_char_map[" "] == 0, "make sure space is of idx 0 in vocab.txt, cuz 0 is used for unknown char"
+
+    elif tokenizer == "phoneme":
+        _pad           = " "
+        _punctuation   = ';:,.!?¡¿—-~"/“”$'           # 마지막에 공백 포함
+        _letters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+        _letters_ipa   = (
+            "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴ"
+            "øɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃ"
+            "…ˈˌːˑʼʴʰᵝʲʷˠˤ˞↓↑→↗↘ᵻ̩"
+            )
+        symbol_list = (
+            [_pad]                           # idx 0 : 공백 (unknown 대응)
+            + list(_punctuation)     # 나머지 punctuation
+            + list(_letters)
+            + list(_letters_ipa)
+        )
+        vocab_char_map = {ch: i for i, ch in enumerate(symbol_list)}
+        vocab_size = len(vocab_char_map)
+        # 안전 확인
+        assert vocab_char_map[" "] == 0, "space must be index 0"
+        
 
     elif tokenizer == "byte":
         vocab_char_map = None
         vocab_size = 256
 
     elif tokenizer == "custom":
-        with open(dataset_name, "r", encoding="utf-8") as f:
+        with open(Path(tokenizer_path).parent, "r", encoding="utf-8") as f:
             vocab_char_map = {}
             for i, char in enumerate(f):
                 vocab_char_map[char[:-1]] = i
